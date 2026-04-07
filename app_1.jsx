@@ -1765,7 +1765,9 @@ function App() {
     })();
   }, []);
 
-  const handleLogin = async (userData) => {
+  const handleLogin = async (payload) => {
+    const userData = (payload && payload.user && payload.token) ? payload.user : payload;
+    if (!userData) return;
     setUser({
       ...userData,
       role: userData?.role || "stock_manager",
