@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZuriTrack JSX Runner</title>
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        width: 100%;
+        min-height: 100%;
+      }
+      body {
+        font-family: Arial, sans-serif;
+        background: radial-gradient(1200px 600px at 50% 35%, #ffffff 0%, #f3f6ff 55%, #eef2ff 100%);
+      }
+      .boot {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #0f172a;
+        position: relative;
+        overflow: hidden;
+      }
+      .boot.hidden {
+        opacity: 0;
+        pointer-events: none;
+        transform: scale(1.01);
+        transition: opacity 240ms ease, transform 240ms ease;
+      }
+      .boot-card {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: min(92vw, 720px);
+        padding: 22px 18px;
+      }
+
+      .boot-honeycomb {
+        position: relative;
+        width: min(360px, 78vw);
+        aspect-ratio: 1 / 1;
+        display: grid;
+        place-items: center;
+        margin: 0 auto 14px;
+      }
+
+      .hex {
+        --hex-size: 86px;
+        position: absolute;
+        width: var(--hex-size);
+        height: calc(var(--hex-size) * 0.866);
+        border-radius: 12px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 255, 0.92));
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        clip-path: polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%);
+        display: grid;
+        place-items: center;
+        transform: translate(-50%, -50%);
+      }
+      .hex::after {
+        content: "";
+        position: absolute;
+        inset: 8px;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        clip-path: inherit;
+        pointer-events: none;
+      }
+      .hex.center {
+        --hex-size: 102px;
+        background: linear-gradient(180deg, #4f79ff, #2746d8);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        box-shadow: 0 18px 40px rgba(39, 70, 216, 0.22);
+      }
+      .hex.center::after {
+        border-color: rgba(255, 255, 255, 0.22);
+      }
+      .hex .dot {
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.65);
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+      }
+      .hex.center .dot {
+        background: rgba(255, 255, 255, 0.72);
+      }
+      .hex .dot.tl { top: 10px; left: 18px; }
+      .hex .dot.tr { top: 10px; right: 18px; }
+      .hex .dot.br { bottom: 10px; right: 18px; }
+
+      .hex-icon {
+        width: 26px;
+        height: 26px;
+        opacity: 0.85;
+      }
+      .hex.center .hex-icon {
+        opacity: 1;
+      }
+
+      .hex-logo {
+        width: 46px;
+        height: 46px;
+        object-fit: contain;
+        display: block;
+        filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.25));
+        animation: logoPulse 2.6s ease-in-out infinite;
+      }
+
+      .boot-status {
+        margin-top: 6px;
+        font-size: 12px;
+        color: rgba(30, 41, 59, 0.78);
+        letter-spacing: 0.2px;
+        animation: fadeInUp 700ms ease both;
+      }
+
+      .boot-progress {
+        width: min(360px, 76vw);
+        height: 3px;
+        border-radius: 999px;
+        margin-top: 10px;
+        background: rgba(148, 163, 184, 0.35);
+        overflow: hidden;
+      }
+      .boot-progress > span {
+        display: block;
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, rgba(79, 121, 255, 0.2), rgba(39, 70, 216, 0.95));
+        transition: width 80ms linear;
+      }
+      .boot-powered {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 18px;
+        color: rgba(30, 41, 59, 0.7);
+        font-size: 12px;
+      }
+      .boot-powered strong {
+        color: rgba(30, 41, 59, 0.9);
+        font-weight: 700;
+        letter-spacing: 0.3px;
+      }
+      .boot-powered img {
+        width: 22px;
+        height: 22px;
+        object-fit: contain;
+        display: block;
+        filter: drop-shadow(0 8px 18px rgba(15, 23, 42, 0.12));
+      }
+      @keyframes logoPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.08); }
+      }
+      @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot" class="boot" aria-label="Loading screen">
+      <div class="boot-card">
+        <div class="boot-honeycomb" aria-hidden="true">
+          <!-- Top-left -->
+          <div class="hex" style="left: 43%; top: 33%;">
+            <span class="dot tl"></span><span class="dot tr"></span><span class="dot br"></span>
+            <svg class="hex-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 12.5c2.6-4.6 8.4-6.3 13-3.7" stroke="rgba(15,23,42,0.75)" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M18 11.5c-2.6 4.6-8.4 6.3-13 3.7" stroke="rgba(15,23,42,0.55)" stroke-width="2.2" stroke-linecap="round"/>
+            </svg>
+          </div>
+
+          <!-- Top -->
+          <div class="hex" style="left: 57%; top: 33%;">
+            <span class="dot tl"></span><span class="dot tr"></span><span class="dot br"></span>
+            <svg class="hex-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 4v5" stroke="rgba(15,23,42,0.75)" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M12 15v5" stroke="rgba(15,23,42,0.55)" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M7 12h10" stroke="rgba(15,23,42,0.6)" stroke-width="2.2" stroke-linecap="round"/>
+              <circle cx="12" cy="12" r="2.2" fill="rgba(15,23,42,0.15)" stroke="rgba(15,23,42,0.45)" stroke-width="1.6"/>
+            </svg>
+          </div>
+
+          <!-- Top-right -->
+          <div class="hex" style="left: 71%; top: 33%;">
+            <span class="dot tl"></span><span class="dot tr"></span><span class="dot br"></span>
+            <svg class="hex-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M8 16c0-3 2.4-5.5 5.5-5.5S19 13 19 16" stroke="rgba(15,23,42,0.65)" stroke-width="2.2" stroke-linecap="round"/>
+              <circle cx="13.5" cy="9.2" r="2.6" fill="rgba(15,23,42,0.12)" stroke="rgba(15,23,42,0.55)" stroke-width="1.8"/>
+            </svg>
+          </div>
+
+          <!-- Left -->
+          <div class="hex" style="left: 36%; top: 50%;">
+            <span class="dot tl"></span><span class="dot tr"></span><span class="dot br"></span>
+            <svg class="hex-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M7 8a6 6 0 0 1 9.6 7.1" stroke="rgba(15,23,42,0.7)" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M16.5 15.5l1.8 1.8" stroke="rgba(15,23,42,0.55)" stroke-width="2.2" stroke-linecap="round"/>
+              <circle cx="11" cy="12" r="2.8" fill="rgba(15,23,42,0.08)" stroke="rgba(15,23,42,0.45)" stroke-width="1.8"/>
+            </svg>
+          </div>
+
+          <!-- Center -->
+          <div class="hex center" style="left: 50%; top: 50%;">
+            <span class="dot tl"></span><span class="dot tr"></span><span class="dot br"></span>
+            <img class="hex-logo" src="./assets/llogo.png" alt="ZuriTrack" onerror="this.style.display='none'" />
+          </div>
+
+          <!-- Right -->
+          <div class="hex" style="left: 64%; top: 50%;">
+            <span class="dot tl"></span><span class="dot tr"></span><span class="dot br"></span>
+            <svg class="hex-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M7 14c0-2.8 2.3-5 5.1-5 2.2 0 4.2 1.4 4.8 3.4" stroke="rgba(15,23,42,0.7)" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M9.2 16.5h7.6" stroke="rgba(15,23,42,0.5)" stroke-width="2.2" stroke-linecap="round"/>
+              <circle cx="18.2" cy="12.4" r="1.6" fill="rgba(15,23,42,0.18)"/>
+            </svg>
+          </div>
+
+          <!-- Bottom-left -->
+          <div class="hex" style="left: 43%; top: 67%;">
+            <span class="dot tl"></span><span class="dot tr"></span><span class="dot br"></span>
+            <svg class="hex-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M8 15c1.6 1.6 4.4 1.6 6 0" stroke="rgba(15,23,42,0.6)" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M10 9h.01" stroke="rgba(15,23,42,0.65)" stroke-width="3.2" stroke-linecap="round"/>
+              <path d="M14 9h.01" stroke="rgba(15,23,42,0.65)" stroke-width="3.2" stroke-linecap="round"/>
+            </svg>
+          </div>
+
+          <!-- Bottom -->
+          <div class="hex" style="left: 57%; top: 67%;">
+            <span class="dot tl"></span><span class="dot tr"></span><span class="dot br"></span>
+            <svg class="hex-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M7 12h10" stroke="rgba(15,23,42,0.65)" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M12 7v10" stroke="rgba(15,23,42,0.55)" stroke-width="2.2" stroke-linecap="round"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="boot-status">Finding lookalikes</div>
+        <div class="boot-progress" aria-label="Loading progress"><span></span></div>
+
+        <div class="boot-powered" aria-label="Powered by PixelSpring">
+          <span>Powered by</span>
+          <img src="./logo/pixelspringlogo.png" alt="PixelSpring" onerror="this.style.display='none'" />
+          <strong>Pixelspring</strong>
+        </div>
+      </div>
+    </div>
+
+    <div id="fatal" style="display:none; position:fixed; inset:0; z-index:99999; background:rgba(2,6,23,0.92); color:#fff; padding:18px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
+      <div style="max-width:1100px; margin:0 auto;">
+        <div style="font-size:14px; font-weight:800; letter-spacing:0.4px; margin-bottom:10px;">ZuriTrack crashed</div>
+        <div style="font-size:12px; opacity:0.9; margin-bottom:12px;">Developer debug screen (enabled via <code>?debug=1</code>).</div>
+        <pre id="fatalText" style="white-space:pre-wrap; line-height:1.35; font-size:12px; background:rgba(255,255,255,0.06); border:1px solid rgba(148,163,184,0.35); border-radius:12px; padding:12px; overflow:auto; max-height:60vh;"></pre>
+        <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+          <button id="fatalReload" style="padding:10px 14px; border-radius:10px; border:1px solid rgba(148,163,184,0.4); background:rgba(255,255,255,0.08); color:#fff; cursor:pointer;">Reload</button>
+          <button id="fatalClose" style="padding:10px 14px; border-radius:10px; border:1px solid rgba(148,163,184,0.4); background:rgba(255,255,255,0.08); color:#fff; cursor:pointer;">Hide</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script>
+      const bootStartedAt = Date.now();
+      const bootEl = document.getElementById("boot");
+      const bootBarEl = bootEl ? bootEl.querySelector(".boot-progress > span") : null;
+      const fatalEl = document.getElementById("fatal");
+      const fatalTextEl = document.getElementById("fatalText");
+      const debugEnabled = (() => {
+        try {
+          const q = new URLSearchParams(window.location.search || "");
+          return q.get("debug") === "1";
+        } catch (_e) {
+          return false;
+        }
+      })();
+
+      function showFatal(errLike) {
+        try {
+          const msg = (errLike && (errLike.stack || errLike.message)) ? (errLike.stack || errLike.message) : String(errLike);
+          // Always log for debugging, but only show overlay when explicitly enabled.
+          console.error(errLike);
+          if (debugEnabled) {
+            if (fatalTextEl) fatalTextEl.textContent = msg;
+            if (fatalEl) fatalEl.style.display = "block";
+          } else {
+            const root = document.getElementById("root");
+            if (root && !root.__zt_friendly_error_shown) {
+              root.__zt_friendly_error_shown = true;
+              root.innerHTML =
+                '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;font-family:Arial,system-ui,sans-serif;">' +
+                '<div style="max-width:520px;width:100%;background:rgba(255,255,255,0.85);border:1px solid rgba(148,163,184,0.35);border-radius:16px;padding:18px 16px;box-shadow:0 18px 50px rgba(2,6,23,0.18);">' +
+                '<div style="font-weight:800;font-size:16px;color:#0f172a;margin-bottom:6px;">Something went wrong</div>' +
+                '<div style="font-size:13px;color:rgba(15,23,42,0.72);line-height:1.5;">Please reload the app. If the problem continues, contact support.</div>' +
+                '<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">' +
+                '<button onclick="location.reload()" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(148,163,184,0.45);background:#0f172a;color:#fff;font-weight:700;cursor:pointer;">Reload</button>' +
+                '</div>' +
+                '</div></div>';
+            }
+          }
+        } catch (_e) {}
+      }
+
+      window.addEventListener("error", (e) => showFatal(e?.error || e?.message || e));
+      window.addEventListener("unhandledrejection", (e) => showFatal(e?.reason || e));
+      if (debugEnabled) {
+        document.getElementById("fatalReload")?.addEventListener("click", () => window.location.reload());
+        document.getElementById("fatalClose")?.addEventListener("click", () => { if (fatalEl) fatalEl.style.display = "none"; });
+      }
+
+      function animateBootProgress(totalMs = 2000) {
+        if (!bootBarEl) return { done: Promise.resolve(), setTo: () => {} };
+
+        let raf = 0;
+        let doneResolve;
+        const done = new Promise((r) => (doneResolve = r));
+        const start = performance.now();
+
+        const fastPhasePct = 85;
+        const fastPhaseMs = Math.round(totalMs * 0.35);
+        const slowPhaseMs = Math.max(1, totalMs - fastPhaseMs);
+
+        function setTo(p) {
+          const clamped = Math.max(0, Math.min(100, p));
+          bootBarEl.style.width = clamped.toFixed(2) + "%";
+        }
+
+        function tick(now) {
+          const t = now - start;
+          let pct;
+
+          if (t <= fastPhaseMs) {
+            pct = (t / fastPhaseMs) * fastPhasePct;
+          } else {
+            const tt = Math.min(1, (t - fastPhaseMs) / slowPhaseMs);
+            pct = fastPhasePct + tt * (100 - fastPhasePct);
+          }
+
+          setTo(pct);
+
+          if (t >= totalMs) {
+            cancelAnimationFrame(raf);
+            setTo(100);
+            doneResolve();
+            return;
+          }
+          raf = requestAnimationFrame(tick);
+        }
+
+        raf = requestAnimationFrame(tick);
+        return { done, setTo };
+      }
+
+      function hideBoot() {
+        if (!bootEl) return;
+        bootEl.classList.add("hidden");
+        window.setTimeout(() => {
+          if (bootEl && bootEl.parentNode) bootEl.parentNode.removeChild(bootEl);
+        }, 260);
+      }
+
+      window.storage = {
+        async get(key) {
+          const value = localStorage.getItem(key);
+          if (value == null) throw new Error("Not found");
+          return { value };
+        },
+        async set(key, value) {
+          localStorage.setItem(key, value);
+        },
+        async delete(key) {
+          localStorage.removeItem(key);
+        },
+      };
+
+      function loadScript(src) {
+        return new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = src;
+          s.async = true;
+          s.onload = () => resolve(src);
+          s.onerror = () => reject(new Error("Failed: " + src));
+          document.head.appendChild(s);
+        });
+      }
+
+      async function ensureRecharts() {
+        if (window.Recharts || window.recharts) return true;
+        const urls = [
+          "https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js",
+          "https://unpkg.com/recharts@2.12.7/umd/Recharts.js",
+          "https://cdn.jsdelivr.net/npm/recharts/umd/Recharts.min.js",
+        ];
+        for (const url of urls) {
+          try {
+            await loadScript(url);
+            if (window.Recharts || window.recharts) return true;
+          } catch (_e) {}
+        }
+        return false;
+      }
+
+      async function run() {
+        let fallbackHideTimer = 0;
+        try {
+          const progress = animateBootProgress(1000);
+          // Safety: never let the loader get stuck forever.
+          fallbackHideTimer = window.setTimeout(hideBoot, 15000);
+          await ensureRecharts();
+
+          // Inject + compile app exactly once to avoid double-execution
+          // (which causes "Identifier 'useState' has already been declared").
+          if (!window.__zt_app_booted) {
+            window.__zt_app_booted = true;
+            const s = document.createElement("script");
+            s.type = "text/babel";
+            s.setAttribute("data-presets", "react");
+            s.src = "./app_1.jsx";
+            document.body.appendChild(s);
+            Babel.transformScriptTags();
+          }
+
+          await progress.done;
+          hideBoot();
+        } catch (e) {
+          const proto = (window.location && window.location.protocol) || "";
+          const extra =
+            proto === "file:"
+              ? "<br><br><b>Fix:</b> open this app using a local web server (not directly from File Explorer).<br>Example: run <code>python -m http.server</code> in this folder, then open <code>http://localhost:8000</code>."
+              : "";
+          document.getElementById("root").innerHTML =
+            '<div style="padding:20px;color:#b91c1c">Failed to start app<br>' +
+            String(e.message || e) +
+            extra +
+            "</div>";
+          console.error(e);
+          showFatal(e);
+          hideBoot();
+        } finally {
+          if (fallbackHideTimer) window.clearTimeout(fallbackHideTimer);
+        }
+      }
+      run();
+    </script>
+  </body>
+</html>
