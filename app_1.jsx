@@ -77,35 +77,6 @@ const toBaseMoney = (amount) => {
     return n;
   }
 };
-const API_BASE = (() => {
-  try {
-    return (typeof window !== "undefined" && window.__zt_api_base) ? String(window.__zt_api_base) : "http://localhost:5051";
-  } catch (_e) {
-    return "http://localhost:5051";
-  }
-})();
-
-async function apiJson(path, { method = "GET", body, token } = {}) {
-  const url = String(path || "").startsWith("http") ? String(path) : `${API_BASE}${path}`;
-  const headers = { "Content-Type": "application/json" };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: body == null ? undefined : JSON.stringify(body),
-  });
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (_e) { data = { raw: text }; }
-  if (!res.ok) {
-    const msg = data?.error ? String(data.error) : (data?.message ? String(data.message) : `HTTP ${res.status}`);
-    const err = new Error(msg);
-    err.status = res.status;
-    err.data = data;
-    throw err;
-  }
-  return data;
-}
 // Ensure default currency is RWF even before React runs.
 if (typeof window !== "undefined") {
   window.__zt_currency = "RWF";
@@ -1311,6 +1282,15 @@ function AuthPage({ onLogin }) {
 
   const normalizeEmail = (e) => String(e || "").trim().toLowerCase();
   const [resetCode, setResetCode] = useState("");
+  const resetKeyFor = (e) => `pwreset:${normalizeEmail(e)}`;
+
+  const simpleHash = async (str) => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(String(str || "") + "zurutracker_salt_2026");
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+  };
+  const makeOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 
   const sendRecoveryCode = async () => {
     setError("");
@@ -1319,7 +1299,23 @@ function AuthPage({ onLogin }) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return setError("Please enter a valid email"), void 0;
     setLoading(true);
     try {
-      await apiJson("/auth/password/forgot", { method: "POST", body: { email: e } });
+      const userKey = `user:${e}`;
+      let result = null;
+      try { result = await window.storage.get(userKey); } catch (_e) {}
+      if (!result?.value) {
+        setError("No account found with this email.");
+        setLoading(false);
+        return;
+      }
+      const code = makeOtp();
+      const codeHash = await simpleHash(code);
+      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 min
+      await window.storage.set(resetKeyFor(e), JSON.stringify({ codeHash, expiresAt }));
+
+      const subject = encodeURIComponent("ZuriTrack password reset code");
+      const body = encodeURIComponent(`Your ZuriTrack password reset code is: ${code}\n\nThis code expires in 10 minutes.\n\nIf you didn't request this, you can ignore this email.`);
+      try { window.location.href = `mailto:${encodeURIComponent(e)}?subject=${subject}&body=${body}`; } catch (_e) {}
+
       setStep("reset");
       setResetCode("");
     } catch (_e) {
@@ -1337,11 +1333,29 @@ function AuthPage({ onLogin }) {
     if (resetNewPass !== resetConfirmPass) return setError("Passwords do not match."), void 0;
     setLoading(true);
     try {
-      const out = await apiJson("/auth/password/reset", {
-        method: "POST",
-        body: { email: e, code: resetCode.trim(), newPassword: resetNewPass }
-      });
-      onLogin(out); // { token, user }
+      const rk = resetKeyFor(e);
+      const saved = await window.storage.get(rk);
+      const rec = JSON.parse(saved.value || "{}");
+      if (!rec?.expiresAt || Date.now() > rec.expiresAt) {
+        setError("Reset code expired. Please request a new code.");
+        setLoading(false);
+        return;
+      }
+      const inputHash = await simpleHash(resetCode.trim());
+      if (inputHash !== rec.codeHash) {
+        setError("Invalid code. Please try again.");
+        setLoading(false);
+        return;
+      }
+      const userKey = `user:${e}`;
+      const userRes = await window.storage.get(userKey);
+      const userData = JSON.parse(userRes.value || "{}");
+      userData.passwordHash = await simpleHash(resetNewPass);
+      userData.updatedAt = new Date().toISOString();
+      await window.storage.set(userKey, JSON.stringify(userData));
+      await window.storage.delete(rk);
+
+      onLogin(userData);
     } catch (_e) {
       setError("Could not reset password. Please try again.");
     }
@@ -1368,26 +1382,46 @@ function AuthPage({ onLogin }) {
 
     try {
       if (mode === "signup") {
-        const out = await apiJson("/auth/signup", {
-          method: "POST",
-          body: { email: e, password, shopName: shopName.trim() }
-        });
-        onLogin(out);
+        const hashedPass = await simpleHash(password);
+        const userKey = `user:${e}`;
+        let existing = null;
+        try { existing = await window.storage.get(userKey); } catch (_e) {}
+        if (existing?.value) {
+          setError("An account with this email already exists. Please log in.");
+          setLoading(false);
+          return;
+        }
+        const userData = {
+          email: e,
+          passwordHash: hashedPass,
+          shopName: shopName.trim(),
+          role: "stock_manager",
+          avatarDataUrl: "",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        await window.storage.set(userKey, JSON.stringify(userData));
+        onLogin(userData);
       } else {
-        const out = await apiJson("/auth/login", {
-          method: "POST",
-          body: { email: e, password }
-        });
-        onLogin(out);
+        const hashedPass = await simpleHash(password);
+        const userKey = `user:${e}`;
+        let result = null;
+        try { result = await window.storage.get(userKey); } catch (_e) {}
+        if (!result?.value) {
+          setError("No account found with this email. Please sign up first.");
+          setLoading(false);
+          return;
+        }
+        const userData = JSON.parse(result.value || "{}");
+        if (userData.passwordHash !== hashedPass) {
+          setError("Incorrect password. Please try again.");
+          setLoading(false);
+          return;
+        }
+        onLogin(userData);
       }
     } catch (err) {
-      const msg = String(err?.message || "Something went wrong. Please try again.");
-      if (msg === "email_exists") setError("An account with this email already exists. Please log in.");
-      else if (msg === "invalid_credentials") setError("Incorrect password. Please try again.");
-      else if (msg === "not_found") setError("No account found with this email. Please sign up first.");
-      else if (msg === "shop_name_required") setError("Please enter your shop name");
-      else if (msg === "password_too_short") setError("Password must be at least 6 characters");
-      else setError(msg);
+      setError("Something went wrong. Please try again.");
     }
     setLoading(false);
   };
@@ -1715,7 +1749,6 @@ function AuthPage({ onLogin }) {
 // ─── Root App with Auth Gate ───
 function App() {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState("");
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Check for saved session on mount
@@ -1725,61 +1758,39 @@ function App() {
         const session = await window.storage.get("current_session");
         if (session) {
           const parsed = JSON.parse(session.value);
-          if (parsed && parsed.token && parsed.user) {
-            setToken(parsed.token);
-            setUser(parsed.user);
-            try {
-              const me = await apiJson("/me", { token: parsed.token });
-              if (me?.user) {
-                setUser(me.user);
-                await window.storage.set("current_session", JSON.stringify({ token: parsed.token, user: me.user }));
-              }
-            } catch (_e) {
-              // invalid token; clear session
-              await window.storage.delete("current_session");
-              setUser(null);
-              setToken("");
-            }
-          } else {
-            // legacy session format
-            setUser(parsed);
-          }
+          setUser(parsed);
         }
       } catch (e) { /* no session */ }
       setCheckingAuth(false);
     })();
   }, []);
 
-  const handleLogin = async (payload) => {
-    const nextToken = payload?.token || "";
-    const nextUser = payload?.user || null;
-    if (!nextToken || !nextUser) return;
-    setToken(nextToken);
+  const handleLogin = async (userData) => {
     setUser({
-      ...nextUser,
-      role: nextUser?.role || "stock_manager",
-      avatarDataUrl: nextUser?.avatarDataUrl || "",
+      ...userData,
+      role: userData?.role || "stock_manager",
+      avatarDataUrl: userData?.avatarDataUrl || "",
     });
     try {
       await window.storage.set("current_session", JSON.stringify({
-        token: nextToken,
-        user: {
-          ...nextUser,
-          role: nextUser?.role || "stock_manager",
-          avatarDataUrl: nextUser?.avatarDataUrl || "",
-        }
+        ...userData,
+        role: userData?.role || "stock_manager",
+        avatarDataUrl: userData?.avatarDataUrl || "",
       }));
     } catch (e) { /* storage might fail */ }
   };
 
   const handleUpdateUser = async (patch) => {
     try {
-      if (!token) return;
-      const out = await apiJson("/me", { method: "PATCH", token, body: patch || {} });
-      if (out?.user) {
-        setUser(out.user);
-        window.storage.set("current_session", JSON.stringify({ token, user: out.user })).catch(() => {});
-      }
+      setUser((prev) => {
+        const next = { ...(prev || {}), ...(patch || {}) };
+        window.storage.set("current_session", JSON.stringify(next)).catch(() => {});
+        if (next?.email) {
+          const userKey = `user:${String(next.email).trim().toLowerCase()}`;
+          window.storage.set(userKey, JSON.stringify(next)).catch(() => {});
+        }
+        return next;
+      });
     } catch (_e) {
       // ignore
     }
@@ -1787,7 +1798,6 @@ function App() {
 
   const handleLogout = async () => {
     setUser(null);
-    setToken("");
     try {
       await window.storage.delete("current_session");
     } catch (e) { /* ok */ }
